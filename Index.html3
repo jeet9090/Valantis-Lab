@@ -1,0 +1,354 @@
+/*
+Valantis Quiz — single-file Next.js page (app/page.jsx)
+
+How to use
+1. Create a new Next.js app with Tailwind (recommended via `npx create-next-app@latest --experimental-app` and enable Tailwind).
+2. Replace /app/page.jsx with the contents of this file.
+3. Ensure Tailwind is configured (globals.css should import Tailwind directives).
+4. `npm run dev` and open http://localhost:3000
+
+Notes
+- This file is intentionally self-contained: it includes the questions array, inline SVG logo, simple local leaderboard (localStorage), and polished UI using Tailwind classes.
+- You can copy the questions array out to a separate file if desired.
+*/
+
+'use client'
+import React, { useEffect, useMemo, useState } from 'react'
+
+// ----------------- Questions (customize as needed) -----------------
+const QUESTIONS = [
+  {
+    id: 1,
+    q: 'What problem is Valantis primarily designed to solve?',
+    options: [
+      'Provide a simple token faucet',
+      'Offer a flexible, asset-aware DEX architecture',
+      'Host NFT marketplaces',
+      'Centralize order books for exchanges'
+    ],
+    answerIndex: 1
+  },
+  {
+    id: 2,
+    q: 'Which of these is a Valantis feature?',
+    options: ['Rebase token optimizer', 'Liquidity vaults', 'Smart NFT minting', 'Gasless batch transfers'],
+    answerIndex: 1
+  },
+  {
+    id: 3,
+    q: 'Valantis aims to improve support for which token types?',
+    options: ['ERC-20 only', 'Liquid staking tokens and rebase tokens', 'Only stablecoins', 'Only NFTs'],
+    answerIndex: 1
+  },
+  {
+    id: 4,
+    q: 'What does "asset-aware" mean in the context of Valantis?',
+    options: [
+      'Tokens are stored on external servers',
+      'The AMM adjusts to token-specific behavior',
+      'Every token is treated identically',
+      'Only manages fiat-backed assets'
+    ],
+    answerIndex: 1
+  },
+  {
+    id: 5,
+    q: 'Which developer benefit does Valantis emphasize?',
+    options: ['Faster frontend creation', 'Easier, safer DEX development for complex assets', 'Free hosting', 'Automated audits'],
+    answerIndex: 1
+  },
+  {
+    id: 6,
+    q: 'A liquidity vault in Valantis is best described as:',
+    options: ['A consumer wallet', 'A flexible aggregator for LP positions', 'A hardware device', 'A fiat bank account'],
+    answerIndex: 1
+  },
+  {
+    id: 7,
+    q: 'Why might standard DEXes struggle with rebase tokens?',
+    options: [
+      'Rebase tokens change supply which breaks price math',
+      'They are illegal',
+      'They require NFTs',
+      'They only work on L2'
+    ],
+    answerIndex: 0
+  },
+  {
+    id: 8,
+    q: 'Valantis targets what kind of teams?',
+    options: ['Only enterprise banks', 'Builders building specialized liquidity solutions', 'Casual traders', 'Mobile app designers'],
+    answerIndex: 1
+  },
+  {
+    id: 9,
+    q: 'Which of these is NOT a goal of Valantis?',
+    options: ['Extensibility', 'Asset-awareness', 'Centralized custody', 'Better liquidity UX'],
+    answerIndex: 2
+  },
+  {
+    id: 10,
+    q: 'What would be a natural integration for Valantis?',
+    options: ['Vault-backed tokens and liquid staking protocols', 'Photo-sharing apps', 'Email providers', 'DNS services'],
+    answerIndex: 0
+  }
+]
+
+// ----------------- Utility: shuffle -----------------
+function shuffleArray(arr) {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+// ----------------- Inline Logo (SVG) -----------------
+function ValantisLogo({ className = 'w-12 h-12' }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 120 120"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Valantis logo"
+    >
+      <defs>
+        <linearGradient id="g1" x1="0" x2="1">
+          <stop offset="0" stopColor="#6EE7B7" />
+          <stop offset="1" stopColor="#60A5FA" />
+        </linearGradient>
+      </defs>
+      <rect width="120" height="120" rx="24" fill="url(#g1)" />
+      <g transform="translate(20, 28)">
+        <path d="M10 6 L34 6 L24 30 Z" fill="#fff" opacity="0.95" />
+        <circle cx="54" cy="24" r="16" fill="#fff" opacity="0.92" />
+        <path d="M10 56 L64 56 L46 86 L0 86 Z" fill="#fff" opacity="0.9" />
+      </g>
+    </svg>
+  )
+}
+
+// ----------------- Main Page -----------------
+export default function Page() {
+  const [questions, setQuestions] = useState(() => shuffleArray(QUESTIONS))
+  const [index, setIndex] = useState(0)
+  const [selected, setSelected] = useState(null)
+  const [score, setScore] = useState(0)
+  const [finished, setFinished] = useState(false)
+  const [name, setName] = useState('')
+  const [leaderboard, setLeaderboard] = useState([])
+  const [shuffledOptions, setShuffledOptions] = useState([])
+
+  useEffect(() => {
+    setShuffledOptions(shuffleArray(getCurrentQuestion().options))
+    // load leaderboard from localStorage
+    const saved = globalThis.localStorage?.getItem('valantis_leaderboard')
+    if (saved) setLeaderboard(JSON.parse(saved))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function getCurrentQuestion() {
+    return questions[index]
+  }
+
+  function handleSelect(option) {
+    setSelected(option)
+  }
+
+  function handleNext() {
+    if (selected == null) return // ignore
+    const real = getCurrentQuestion()
+    const correct = real.options[real.answerIndex]
+    if (selected === correct) setScore((s) => s + 1)
+
+    const next = index + 1
+    if (next >= questions.length) {
+      setFinished(true)
+      // save to leaderboard if name provided
+      if (name.trim()) {
+        const entry = { name: name.trim(), score: score + (selected === correct ? 1 : 0), date: Date.now() }
+        const updated = [...leaderboard, entry].sort((a, b) => b.score - a.score).slice(0, 10)
+        setLeaderboard(updated)
+        globalThis.localStorage.setItem('valantis_leaderboard', JSON.stringify(updated))
+      }
+    } else {
+      setIndex(next)
+      const nextQ = questions[next]
+      setShuffledOptions(shuffleArray(nextQ.options))
+      setSelected(null)
+    }
+  }
+
+  function handleRestart() {
+    setQuestions(shuffleArray(QUESTIONS))
+    setIndex(0)
+    setSelected(null)
+    setScore(0)
+    setFinished(false)
+    setShuffledOptions(shuffleArray(QUESTIONS[0].options))
+  }
+
+  const progressPct = Math.round(((index) / questions.length) * 100)
+
+  // memo for current question to avoid re-renders
+  const current = useMemo(() => getCurrentQuestion(), [questions, index])
+
+  return (
+    <main className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-slate-100 flex items-center justify-center p-6">
+      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        {/* Left: Brand / Info */}
+        <aside className="md:col-span-1 bg-gradient-to-br from-slate-800/60 to-slate-900/60 border border-slate-700 rounded-2xl p-6 backdrop-blur-sm">
+          <div className="flex items-center gap-4">
+            <ValantisLogo className="w-14 h-14" />
+            <div>
+              <h1 className="text-xl font-semibold">Valantis Quiz</h1>
+              <p className="text-sm text-slate-300">Learn Valantis, win reputation. Built for builders and farmers.</p>
+            </div>
+          </div>
+
+          <div className="mt-6 text-sm text-slate-300 space-y-3">
+            <p><strong>Questions:</strong> {questions.length}</p>
+            <p><strong>Current:</strong> {index + 1} / {questions.length}</p>
+            <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden mt-2">
+              <div style={{ width: `${(index / questions.length) * 100}%` }} className="h-2 bg-gradient-to-r from-emerald-400 to-sky-400" />
+            </div>
+            <p className="mt-2 text-xs">Tip: answer quickly, but accurately. Add a name to be saved to the local leaderboard.</p>
+            <label className="block mt-3 text-xs">Display name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your handle (optional)"
+              className="mt-1 w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-400"
+            />
+
+            <div className="mt-4">
+              <button onClick={handleRestart} className="w-full py-2 rounded-lg bg-slate-700 hover:bg-slate-600">Restart Quiz</button>
+            </div>
+          </div>
+
+          <div className="mt-6 border-t border-slate-700 pt-4 text-xs text-slate-400">
+            <div className="font-medium text-slate-200">Leaderboard</div>
+            {leaderboard.length === 0 ? (
+              <p className="mt-2 text-slate-400 text-sm">No scores yet. Be the first!</p>
+            ) : (
+              <ol className="mt-2 space-y-2">
+                {leaderboard.map((e, i) => (
+                  <li key={i} className="flex justify-between items-center text-sm">
+                    <span>{i + 1}. {e.name}</span>
+                    <span className="text-sky-300 font-semibold">{e.score}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        </aside>
+
+        {/* Main: Quiz Card */}
+        <section className="md:col-span-2 bg-slate-800/50 border border-slate-700 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+
+          {/* Decorative floating shapes */}
+          <div className="pointer-events-none absolute -right-40 -top-20 opacity-30 transform rotate-12">
+            <svg width="260" height="260" viewBox="0 0 260 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="260" height="260" rx="40" fill="url(#g)"/>
+              <defs>
+                <linearGradient id="g" x1="0" x2="1">
+                  <stop offset="0" stopColor="#0EA5E9" stopOpacity="0.4" />
+                  <stop offset="1" stopColor="#34D399" stopOpacity="0.4" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+
+          {!finished ? (
+            <div>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold text-white">Question {index + 1}</h2>
+                  <p className="mt-1 text-sm text-slate-300 max-w-prose">{current.q}</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-slate-400">Score</div>
+                  <div className="text-lg font-semibold text-emerald-300">{score}</div>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-3">
+                {shuffledOptions.map((opt, i) => {
+                  const isSelected = selected === opt
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => handleSelect(opt)}
+                      className={`w-full text-left p-4 rounded-xl border ${isSelected ? 'border-sky-400 bg-slate-700' : 'border-slate-700 bg-slate-800/50'} hover:scale-[1.01] transition`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{opt}</span>
+                        {isSelected && <span className="text-xs text-sky-200">Selected</span>}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="mt-6 flex items-center gap-3">
+                <button
+                  onClick={handleNext}
+                  className="px-5 py-2 rounded-lg bg-gradient-to-r from-sky-500 to-emerald-400 text-slate-900 font-semibold disabled:opacity-50"
+                  disabled={selected == null}
+                >
+                  {index + 1 === questions.length ? 'Finish' : 'Next'}
+                </button>
+
+                <button onClick={() => { setSelected(null); }} className="px-4 py-2 rounded-lg border border-slate-700">Clear</button>
+
+                <div className="ml-auto text-sm text-slate-400">Progress: {index}/{questions.length}</div>
+              </div>
+
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <h2 className="text-3xl font-bold text-white">All done!</h2>
+              <p className="mt-3 text-slate-300">You scored <span className="font-semibold text-emerald-300">{score}</span> out of {questions.length}.</p>
+
+              <div className="mt-6 flex items-center justify-center gap-3">
+                <button onClick={handleRestart} className="px-6 py-2 rounded-lg bg-slate-700 hover:bg-slate-600">Play again</button>
+                <button
+                  onClick={() => {
+                    // share text
+                    const text = `I scored ${score}/${questions.length} on the Valantis Quiz! Try it: `
+                    if (navigator.share) navigator.share({ title: 'Valantis Quiz', text })
+                    else navigator.clipboard.writeText(text)
+                  }}
+                  className="px-6 py-2 rounded-lg border border-slate-700"
+                >Share</button>
+              </div>
+
+              <div className="mt-8 text-left">
+                <h3 className="text-sm text-slate-300 font-medium">Answers</h3>
+                <ol className="mt-3 space-y-2 text-sm">
+                  {questions.map((q, i) => (
+                    <li key={i} className="bg-slate-800/40 p-3 rounded">
+                      <div className="font-semibold">{i + 1}. {q.q}</div>
+                      <div className="text-slate-300 mt-1">Answer: <span className="text-emerald-300 font-medium">{q.options[q.answerIndex]}</span></div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+            </div>
+          )}
+
+        </section>
+
+      </div>
+
+      {/* small footer */}
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-xs text-slate-400">
+        Built for @ValantisLabs • Local leaderboard stored in your browser
+      </div>
+    </main>
+  )
+}
